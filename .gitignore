@@ -1,0 +1,6 @@
+.env
+env.yaml
+venv/
+__pycache__/
+*.pyc
+audio_storage/

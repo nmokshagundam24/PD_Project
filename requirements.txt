@@ -1,0 +1,18 @@
+fastapi==0.115.0
+uvicorn==0.30.6
+sqlalchemy==2.0.35
+psycopg2-binary==2.9.9
+python-dotenv==1.0.1
+python-multipart==0.0.9
+
+# Audio processing
+librosa==0.10.2
+soundfile==0.12.1
+praat-parselmouth==0.4.5
+
+# ML
+xgboost==2.1.1
+joblib==1.4.2
+pandas==2.2.2
+numpy==1.26.4
+scikit-learn==1.5.1

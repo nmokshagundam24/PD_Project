@@ -53,7 +53,12 @@ def process_task(
     if not 1 <= task_id <= 6:
         raise HTTPException(status_code=400, detail="task_id must be between 1 and 6")
 
+    db_start = time.perf_counter()
     participant = db.query(Participant).filter(Participant.participant_id == participant_id).first()
+    print(
+        f"[timing] Participant DB lookup: "
+        f"{time.perf_counter() - db_start:.3f}s"
+    )
     if not participant:
         raise HTTPException(status_code=404, detail="Participant not found. Call /start-session first.")
 
@@ -70,23 +75,83 @@ def process_task(
 
     audio_path = None
     try:
+        read_start = time.perf_counter()
         file_content = file.file.read()
+        print(
+            f"[timing] Read uploaded file: "
+            f"{time.perf_counter() - read_start:.3f}s"
+        )
+        
         if len(file_content) > MAX_UPLOAD_BYTES:
             raise HTTPException(status_code=413, detail="Audio file is too large.")
         print(f"[process-task] task={task_id}/{task_name_lower} lang={language} size={len(file_content)} bytes")
 
+        # with _gate:
+        #     audio_path = save_audio(participant_id, task_id, task_name_lower, file_content)
+        #     y, sr = load_audio(audio_path)
+        #     y = y[: sr * MAX_AUDIO_SECONDS]  # safety cap (tasks are at most 60 s)
+        #     print(f"[process-task] Audio loaded: {len(y)} samples, sr={sr}, duration={len(y)/sr:.2f}s")
+
+        #     features = extract_features_from_audio(y, sr)
+        #     if features is None:
+        #         raise HTTPException(status_code=422, detail="Audio too short or feature extraction failed.")
+
+        #     features["Task"] = task_name_lower  # for the Telugu model's OneHotEncoder
+        #     label, confidence = predict(features, language)
+
+        gate_start = time.perf_counter()
+
         with _gate:
-            audio_path = save_audio(participant_id, task_id, task_name_lower, file_content)
+            print(
+                f"[timing] Semaphore wait: "
+                f"{time.perf_counter() - gate_start:.3f}s"
+            )
+
+            stage_start = time.perf_counter()
+            audio_path = save_audio(
+                participant_id, task_id, task_name_lower, file_content
+            )
+            print(
+                f"[timing] Save temporary audio: "
+                f"{time.perf_counter() - stage_start:.3f}s"
+            )
+
+            stage_start = time.perf_counter()
             y, sr = load_audio(audio_path)
-            y = y[: sr * MAX_AUDIO_SECONDS]  # safety cap (tasks are at most 60 s)
-            print(f"[process-task] Audio loaded: {len(y)} samples, sr={sr}, duration={len(y)/sr:.2f}s")
+            y = y[: sr * MAX_AUDIO_SECONDS]
 
+            print(
+                f"[timing] Load/decode audio: "
+                f"{time.perf_counter() - stage_start:.3f}s"
+            )
+            print(
+                f"[process-task] Audio loaded: {len(y)} samples, "
+                f"sr={sr}, duration={len(y)/sr:.2f}s"
+            )
+
+            stage_start = time.perf_counter()
             features = extract_features_from_audio(y, sr)
-            if features is None:
-                raise HTTPException(status_code=422, detail="Audio too short or feature extraction failed.")
 
-            features["Task"] = task_name_lower  # for the Telugu model's OneHotEncoder
+            print(
+                f"[timing] Feature extraction call: "
+                f"{time.perf_counter() - stage_start:.3f}s"
+            )
+
+            if features is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Audio too short or feature extraction failed."
+                )
+
+            features["Task"] = task_name_lower
+
+            stage_start = time.perf_counter()
             label, confidence = predict(features, language)
+
+            print(
+                f"[timing] Model prediction: "
+                f"{time.perf_counter() - stage_start:.3f}s"
+            )
         print(f"[process-task] Prediction: label={label}, confidence={confidence:.4f} (model: {language})")
 
         recording = Recording(
@@ -97,8 +162,15 @@ def process_task(
             label=label,
             confidence=confidence,
         )
+
+        db_start = time.perf_counter()
+        
         db.add(recording)
         db.commit()
+        print(
+            f"[timing] Save recording to DB: "
+            f"{time.perf_counter() - db_start:.3f}s"
+        )
 
         return _result_payload(participant_id, task_id, task_name_lower, language, label, confidence)
 
@@ -117,3 +189,8 @@ def process_task(
         # Privacy: the recording is never kept
         if audio_path and os.path.exists(audio_path):
             os.remove(audio_path)
+
+        print(
+            f"[timing] TOTAL endpoint time: "
+            f"{time.perf_counter() - request_started:.3f}s"
+        )

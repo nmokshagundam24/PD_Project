@@ -100,7 +100,7 @@ def extract_features_from_audio(y: np.ndarray, sr: int) -> dict | None:
             res["formant3"] = float(formants.get_value_at_time(3, duration / 2))
         except Exception:
             res["formant1"] = res["formant2"] = res["formant3"] = np.nan
-                print(
+        print(
             f"[timing] Formant extraction: "
             f"{time.perf_counter() - stage_start:.3f}s"
         )

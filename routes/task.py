@@ -1,5 +1,6 @@
 import os
 import threading
+import time
 
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -40,6 +41,7 @@ def process_task(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
+    request_started = time.perf_counter()
     task_name_lower = task_name.lower()
     if task_name_lower not in ALLOWED_TASKS:
         raise HTTPException(status_code=400, detail=f"Invalid task_name. Must be one of: {ALLOWED_TASKS}")

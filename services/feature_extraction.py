@@ -1,4 +1,5 @@
 import warnings
+import time
 import numpy as np
 import librosa
 import parselmouth
@@ -6,6 +7,9 @@ import parselmouth
 warnings.filterwarnings("ignore")
 
 def extract_features_from_audio(y: np.ndarray, sr: int) -> dict | None:
+    total_start = time.perf_counter()
+    stage_start = total_start
+    
     try:
         y, _ = librosa.effects.trim(y)
         duration = float(librosa.get_duration(y=y, sr=sr))
@@ -26,6 +30,8 @@ def extract_features_from_audio(y: np.ndarray, sr: int) -> dict | None:
         mfcc_feats = np.concatenate([mfcc, delta, delta2], axis=0).mean(axis=1)
         for i, v in enumerate(mfcc_feats):
             res[f"mfcc{i + 1}"] = float(v)
+        print(f"[timing] MFCC extraction and statistics: " f"{time.perf_counter() - stage_start:.3f}s")
+        stage_start = time.perf_counter()
 
         # Build 104-feature MFCCs (Explicit mean/std stats)
         for i in range(13):
@@ -55,6 +61,11 @@ def extract_features_from_audio(y: np.ndarray, sr: int) -> dict | None:
         res["jitter"] = jitter
         res["shimmer"] = shimmer
         res["hnr"] = hnr
+        print(
+            f"[timing] Jitter, shimmer, HNR: "
+            f"{time.perf_counter() - stage_start:.3f}s"
+        )
+        stage_start = time.perf_counter()
 
         # Pitch (Midpoint for 49-feature, Stats for 104-feature)
         try:
@@ -75,6 +86,12 @@ def extract_features_from_audio(y: np.ndarray, sr: int) -> dict | None:
         except Exception:
             res["pitch"] = res["pitch_mean"] = res["pitch_std"] = res["pitch_median"] = res["pitch_min"] = res["pitch_max"] = res["pitch_range"] = np.nan
 
+        print(
+            f"[timing] Pitch extraction: "
+            f"{time.perf_counter() - stage_start:.3f}s"
+        )
+        stage_start = time.perf_counter()
+
         # Formants
         try:
             formants = snd.to_formant_burg()
@@ -83,7 +100,13 @@ def extract_features_from_audio(y: np.ndarray, sr: int) -> dict | None:
             res["formant3"] = float(formants.get_value_at_time(3, duration / 2))
         except Exception:
             res["formant1"] = res["formant2"] = res["formant3"] = np.nan
+                print(
+            f"[timing] Formant extraction: "
+            f"{time.perf_counter() - stage_start:.3f}s"
+        )
+        stage_start = time.perf_counter()
 
+        
         # Spectral
         cent = librosa.feature.spectral_centroid(y=y, sr=sr)
         bw = librosa.feature.spectral_bandwidth(y=y, sr=sr)
@@ -112,6 +135,15 @@ def extract_features_from_audio(y: np.ndarray, sr: int) -> dict | None:
         res["rms_mean"] = float(np.mean(rms))
         res["rms_std"] = float(np.std(rms))
         res["duration"] = duration
+
+        print(
+            f"[timing] Spectral feature extraction: "
+            f"{time.perf_counter() - stage_start:.3f}s"
+        )
+        print(
+            f"[timing] TOTAL feature extraction: "
+            f"{time.perf_counter() - total_start:.3f}s"
+        )
 
         return res
     except Exception as e:
